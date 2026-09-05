@@ -1,0 +1,46 @@
+name: Build Windows EXE
+
+# Roda automaticamente quando voce enviar codigo para o branch main,
+# e tambem pode ser disparado manualmente pela aba "Actions" no GitHub.
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Baixar o codigo do repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compilar o FlashCards.exe com PyInstaller
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name "FlashCards" main.py
+
+      - name: Enviar o executavel como artefato do build
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlashCards-windows
+          path: dist/FlashCards.exe
+
+      - name: Criar release automatica com o .exe (opcional)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: FlashCards build ${{ github.run_number }}
+          files: dist/FlashCards.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
