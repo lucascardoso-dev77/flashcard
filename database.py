@@ -8,7 +8,7 @@ ou em ./flashcards.db se rodar fora do Windows (ex: para testes).
 import os
 import sqlite3
 import sys
-from datetime import datetime, date
+from datetime import datetime
 
 
 def get_db_path() -> str:
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS cards (
 
     -- Campos do algoritmo de repeticao espacada (SM-2)
     ease_factor REAL NOT NULL DEFAULT 2.5,
-    interval_days INTEGER NOT NULL DEFAULT 0,
+    interval_days REAL NOT NULL DEFAULT 0,
     repetitions INTEGER NOT NULL DEFAULT 0,
     due_date TEXT NOT NULL,
     last_reviewed TEXT,
@@ -89,14 +89,14 @@ class Database:
         self.conn.commit()
 
     def deck_stats(self, deck_id: int):
-        """Retorna (total_cards, due_today) para um deck."""
+        """Retorna (total_cards, due_now) para um deck."""
         total = self.conn.execute(
             "SELECT COUNT(*) AS c FROM cards WHERE deck_id = ?", (deck_id,)
         ).fetchone()["c"]
-        today = date.today().isoformat()
+        now = datetime.now().isoformat()
         due = self.conn.execute(
             "SELECT COUNT(*) AS c FROM cards WHERE deck_id = ? AND due_date <= ?",
-            (deck_id, today),
+            (deck_id, now),
         ).fetchone()["c"]
         return total, due
 
@@ -107,13 +107,12 @@ class Database:
         if not front or not back:
             raise ValueError("Frente e verso do card nao podem ser vazios.")
         now = datetime.now().isoformat()
-        today = date.today().isoformat()
         cur = self.conn.execute(
             """INSERT INTO cards
                (deck_id, front, back, created_at, ease_factor, interval_days,
                 repetitions, due_date, last_reviewed)
                VALUES (?, ?, ?, ?, 2.5, 0, 0, ?, NULL)""",
-            (deck_id, front, back, now, today),
+            (deck_id, front, back, now, now),
         )
         self.conn.commit()
         return cur.lastrowid
@@ -138,12 +137,12 @@ class Database:
         ).fetchall()
 
     def get_due_cards(self, deck_id: int):
-        """Cards cuja due_date e hoje ou anterior, ordenados pelos mais atrasados primeiro."""
-        today = date.today().isoformat()
+        """Cards cuja due_date ja passou (ate agora), mais atrasados primeiro."""
+        now = datetime.now().isoformat()
         return self.conn.execute(
             """SELECT * FROM cards WHERE deck_id = ? AND due_date <= ?
                ORDER BY due_date ASC""",
-            (deck_id, today),
+            (deck_id, now),
         ).fetchall()
 
     def save_review(self, card_id: int, ease_factor: float, interval_days: int,

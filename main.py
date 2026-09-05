@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 
 from database import Database
-from srs import review_card
+from srs import review_card, preview_intervals
 
 APP_TITLE = "FlashCards"
 BG_COLOR = "#f4f5f7"
@@ -307,8 +307,9 @@ class CardManagerFrame(tk.Frame):
 class ReviewFrame(tk.Frame):
     """Tela de revisao de cards com repeticao espacada."""
 
+    # (rotulo do botao, nota/quality usada pelo algoritmo, cor)
     QUALITY_BUTTONS = [
-        ("Errei", 1, "#e74c3c"),
+        ("De novo", 1, "#e74c3c"),
         ("Dificil", 3, "#f39c12"),
         ("Bom", 4, "#3498db"),
         ("Facil", 5, "#2ecc71"),
@@ -319,9 +320,8 @@ class ReviewFrame(tk.Frame):
         self.app = app
         self.deck_id = deck_id
         self.deck_name = deck_name
-        self.queue = list(due_cards)
-        self.total_count = len(self.queue)
-        self.reviewed_count = 0
+        self.queue = [dict(c) for c in due_cards]
+        self.done_count = 0
         self.showing_answer = False
 
         header = tk.Frame(self, bg=BG_COLOR)
@@ -355,15 +355,16 @@ class ReviewFrame(tk.Frame):
 
         if not self.queue:
             self.card_label.config(text="Revisao concluida! Bom trabalho.")
-            self.progress_lbl.config(text=f"{self.reviewed_count}/{self.total_count} cards revisados")
+            self.progress_lbl.config(text=f"{self.done_count} card(s) revisado(s)")
             tk.Button(self.action_area, text="Voltar aos decks", bg=ACCENT_COLOR,
                       fg="white", relief="flat", padx=16, pady=8,
                       command=self.app.show_deck_list).pack()
             return
 
         self.current_card = self.queue[0]
+        restantes = len(self.queue)
         self.progress_lbl.config(
-            text=f"Card {self.reviewed_count + 1} de {self.total_count}"
+            text=f"{restantes} card(s) restante(s) nesta sessao"
         )
         self.card_label.config(text=self.current_card["front"])
 
@@ -379,9 +380,20 @@ class ReviewFrame(tk.Frame):
         for w in self.action_area.winfo_children():
             w.destroy()
 
+        # Calcula, sem salvar nada ainda, o texto de previsao de cada botao
+        # (ex: '<10min', '4dia(s)', '15dia(s)', '1,1mes(es)'), a partir do
+        # estado atual do card.
+        previews = preview_intervals(
+            self.current_card["ease_factor"],
+            self.current_card["interval_days"],
+            self.current_card["repetitions"],
+        )
+
         for label, quality, color in self.QUALITY_BUTTONS:
-            tk.Button(self.action_area, text=label, bg=color, fg="white",
-                      relief="flat", padx=14, pady=8,
+            btn_text = f"{previews[quality]}\n{label}"
+            tk.Button(self.action_area, text=btn_text, bg=color, fg="white",
+                      relief="flat", padx=14, pady=8, justify="center",
+                      font=("Segoe UI", 10),
                       command=lambda q=quality: self.answer_card(q)).pack(side="left", padx=6)
 
     def answer_card(self, quality):
@@ -396,7 +408,20 @@ class ReviewFrame(tk.Frame):
             card["id"], result.ease_factor, result.interval_days,
             result.repetitions, result.due_date,
         )
-        self.reviewed_count += 1
+
+        if quality < 3:
+            # "De novo": o card volta a aparecer daqui a pouco, ainda
+            # nesta mesma sessao de revisao (igual o Anki faz).
+            updated_card = dict(card)
+            updated_card["ease_factor"] = result.ease_factor
+            updated_card["interval_days"] = result.interval_days
+            updated_card["repetitions"] = result.repetitions
+            updated_card["due_date"] = result.due_date
+            insert_pos = min(3, len(self.queue))
+            self.queue.insert(insert_pos, updated_card)
+        else:
+            self.done_count += 1
+
         self.show_current_card()
 
 
